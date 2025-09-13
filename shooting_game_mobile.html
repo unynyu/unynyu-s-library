@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>手机枪战小游戏</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+  <style>
+    body { background: #222; margin: 0; }
+    canvas { background: #333; display: block; margin: 0 auto; border: 2px solid #666; touch-action: none;}
+    #score { color: #fff; font-size: 20px; text-align:center; margin-top: 8px; }
+    #info { color: #f99; font-size: 16px; text-align:center; margin-top: 4px; }
+    #joystick { position: fixed; left: 20px; bottom: 20px; width: 90px; height: 90px; z-index: 99;}
+    #joystick-base { width: 90px; height: 90px; background: rgba(255,255,255,0.1); border-radius: 50%; position: absolute; }
+    #joystick-stick { width: 45px; height: 45px; background: rgba(200,200,255,0.7); border-radius: 50%; position: absolute; left: 22px; top: 22px; }
+  </style>
+</head>
+<body>
+  <div id="score">得分：0</div>
+  <canvas id="game"></canvas>
+  <div id="info">左下拖动控制移动，点屏幕射击</div>
+  <!-- 虚拟摇杆 -->
+  <div id="joystick">
+    <div id="joystick-base"></div>
+    <div id="joystick-stick"></div>
+  </div>
+  <script>
+    // --- 自适应画布尺寸 ---
+    const canvas = document.getElementById('game');
+    function resizeCanvas() {
+      canvas.width = Math.min(window.innerWidth, 600);
+      canvas.height = Math.min(window.innerHeight-60, 420);
+    }
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+
+    const ctx = canvas.getContext('2d');
+    const scoreDom = document.getElementById('score');
+    const infoDom = document.getElementById('info');
+
+    // --- 游戏参数 ---
+    const player = {x: canvas.width/2, y: canvas.height/2, size: 22, color: "#4af", speed: 2.6, vx:0, vy:0};
+    let score = 0;
+    let bullets = [];
+    let enemies = [];
+    let gameOver = false;
+    let mousePos = {x: player.x, y: player.y}; // 瞄准点
+    let autoShoot = false;
+
+    // --- 敌人生成 ---
+    function spawnEnemy() {
+      let edge = Math.floor(Math.random()*4); // 0上 1右 2下 3左
+      let x, y;
+      if (edge===0) { x=Math.random()*canvas.width; y=0; }
+      else if (edge===1) { x=canvas.width; y=Math.random()*canvas.height; }
+      else if (edge===2) { x=Math.random()*canvas.width; y=canvas.height; }
+      else { x=0; y=Math.random()*canvas.height; }
+      enemies.push({x, y, size:18, color:"#fa4", speed:1.2});
+    }
+    setInterval(()=>{ if(!gameOver) spawnEnemy(); }, 1200);
+
+    // --- 游戏主循环 ---
+    function gameLoop() {
+      if (gameOver) {
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = "#f99";
+        ctx.font = "bold 30px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("游戏结束!", canvas.width/2, canvas.height/2-10);
+        ctx.font = "18px Arial";
+        ctx.fillText("得分："+score, canvas.width/2, canvas.height/2+24);
+        ctx.fillText("刷新页面重新开始", canvas.width/2, canvas.height/2+48);
+        return;
+      }
+
+      // 玩家移动
+      player.x += player.vx * player.speed;
+      player.y += player.vy * player.speed;
+      // 边界限制
+      player.x = Math.max(player.size/2, Math.min(canvas.width-player.size/2, player.x));
+      player.y = Math.max(player.size/2, Math.min(canvas.height-player.size/2, player.y));
+
+      // 子弹移动
+      bullets.forEach((b, i)=>{
+        b.x += Math.cos(b.angle)*b.speed;
+        b.y += Math.sin(b.angle)*b.speed;
+        if (b.x<0||b.x>canvas.width||b.y<0||b.y>canvas.height) bullets.splice(i,1);
+      });
+
+      // 敌人移动
+      enemies.forEach((e, ei)=>{
+        let dx = player.x-e.x, dy = player.y-e.y;
+        let dist = Math.sqrt(dx*dx+dy*dy);
+        e.x += dx/dist*e.speed;
+        e.y += dy/dist*e.speed;
+        if (dist < (player.size+e.size)/2) {
+          gameOver = true;
+        }
+      });
+
+      // 子弹命中敌人
+      bullets.forEach((b, bi)=>{
+        enemies.forEach((e, ei)=>{
+          let dx = b.x-e.x, dy = b.y-e.y;
+          let dist = Math.sqrt(dx*dx+dy*dy);
+          if (dist < (e.size/2+3)) {
+            enemies.splice(ei,1);
+            bullets.splice(bi,1);
+            score++;
+            scoreDom.textContent = "得分："+score;
+          }
+        });
+      });
+
+      // --- 绘制 ---
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      // 玩家
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      let angle = Math.atan2(mousePos.y-player.y, mousePos.x-player.x);
+      ctx.rotate(angle);
+      ctx.fillStyle = player.color;
+      ctx.beginPath();
+      ctx.arc(0,0,player.size/2,0,Math.PI*2);
+      ctx.fill();
+      // 枪口
+      ctx.fillStyle="#fff";
+      ctx.fillRect(player.size/2-3,-3,14,6);
+      ctx.restore();
+
+      // 子弹
+      bullets.forEach(b=>{
+        ctx.fillStyle="#fff";
+        ctx.beginPath();
+        ctx.arc(b.x,b.y,3.5,0,Math.PI*2);
+        ctx.fill();
+      });
+
+      // 敌人
+      enemies.forEach(e=>{
+        ctx.fillStyle = e.color;
+        ctx.beginPath();
+        ctx.arc(e.x,e.y,e.size/2,0,Math.PI*2);
+        ctx.fill();
+      });
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    // --- 虚拟摇杆控制 ---
+    const joystick = document.getElementById('joystick');
+    const stick = document.getElementById('joystick-stick');
+    let joyTouchId = null, joyBaseX = 45, joyBaseY = 45, joyStickX = 45, joyStickY = 45;
+    function updateJoystick(x, y) {
+      // 半径限制
+      let dx = x-45, dy = y-45;
+      let dist = Math.sqrt(dx*dx+dy*dy);
+      if (dist>30) {
+        dx = dx/dist*30;
+        dy = dy/dist*30;
+        x = 45+dx;
+        y = 45+dy;
+      }
+      joyStickX = x; joyStickY = y;
+      stick.style.left = (x-22)+'px';
+      stick.style.top = (y-22)+'px';
+      // 映射为玩家速度
+      player.vx = dx/30;
+      player.vy = dy/30;
+    }
+    function resetJoystick() {
+      joyStickX = 45; joyStickY = 45;
+      stick.style.left = '22px';
+      stick.style.top = '22px';
+      player.vx = 0; player.vy = 0;
+    }
+
+    joystick.addEventListener('touchstart',function(e){
+      let t = e.touches[0];
+      joyTouchId = t.identifier;
+      let rect = joystick.getBoundingClientRect();
+      let x = t.clientX-rect.left, y = t.clientY-rect.top;
+      updateJoystick(x,y);
+      e.preventDefault();
+    },{passive:false});
+    joystick.addEventListener('touchmove',function(e){
+      for(let i=0;i<e.touches.length;i++){
+        let t = e.touches[i];
+        if (t.identifier===joyTouchId) {
+          let rect = joystick.getBoundingClientRect();
+          let x = t.clientX-rect.left, y = t.clientY-rect.top;
+          updateJoystick(x,y);
+        }
+      }
+      e.preventDefault();
+    },{passive:false});
+    joystick.addEventListener('touchend',function(e){
+      resetJoystick();
+      joyTouchId = null;
+      e.preventDefault();
+    },{passive:false});
+
+    // --- 触控瞄准和射击 ---
+    let shotAngle = null;
+    canvas.addEventListener('touchstart',function(e){
+      let t = e.touches[0];
+      let rect = canvas.getBoundingClientRect();
+      let x = t.clientX-rect.left, y = t.clientY-rect.top;
+      mousePos = {x,y};
+      shotAngle = Math.atan2(y-player.y, x-player.x);
+      // 发射子弹
+      if (!gameOver) {
+        bullets.push({
+          x: player.x+Math.cos(shotAngle)*player.size/2,
+          y: player.y+Math.sin(shotAngle)*player.size/2,
+          angle: shotAngle,
+          speed: 7.5
+        });
+      }
+      e.preventDefault();
+    },{passive:false});
+    canvas.addEventListener('touchmove',function(e){
+      let t = e.touches[0];
+      let rect = canvas.getBoundingClientRect();
+      let x = t.clientX-rect.left, y = t.clientY-rect.top;
+      mousePos = {x,y};
+      e.preventDefault();
+    },{passive:false});
+    canvas.addEventListener('touchend',function(e){
+      shotAngle = null;
+      e.preventDefault();
+    },{passive:false});
+
+    // --- PC鼠标支持（兼容桌面） ---
+    canvas.addEventListener("mousemove",e=>{
+      let rect = canvas.getBoundingClientRect();
+      mousePos.x = e.clientX-rect.left;
+      mousePos.y = e.clientY-rect.top;
+    });
+    canvas.addEventListener("mousedown",e=>{
+      if (gameOver) return;
+      let rect = canvas.getBoundingClientRect();
+      let x = e.clientX-rect.left, y = e.clientY-rect.top;
+      let angle = Math.atan2(y-player.y, x-player.x);
+      bullets.push({
+        x: player.x+Math.cos(angle)*player.size/2,
+        y: player.y+Math.sin(angle)*player.size/2,
+        angle: angle,
+        speed: 7.5
+      });
+      mousePos = {x, y};
+    });
+
+    // --- 开始 ---
+    gameLoop();
+  </script>
+</body>
+</html>
