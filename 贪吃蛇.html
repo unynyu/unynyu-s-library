@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>贪吃蛇游戏优化版</title>
+  <style>
+    body { text-align: center; font-family: Arial, sans-serif; background: #fafafa; }
+    canvas { background: #f0f0f0; display: block; margin: 0 auto; border: 1px solid #bbb; }
+    #info { margin-top: 10px; font-size: 18px; }
+    #score { font-size: 22px; color: #0a7; margin-top: 10px;}
+  </style>
+</head>
+<body>
+  <h1>贪吃蛇游戏优化版</h1>
+  <div id="score">得分：0</div>
+  <canvas id="game" width="400" height="400"></canvas>
+  <div id="info">按任意键开始游戏</div>
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const scoreDom = document.getElementById('score');
+    const infoDom = document.getElementById('info');
+
+    const grid = 20;
+    const gridCount = canvas.width / grid;
+    let snake, dx, dy, food, score, playing, paused, gameOver, moveQueue, speed, timer;
+
+    // 初始化游戏
+    function init() {
+      snake = [
+        {x: 7 * grid, y: 10 * grid},
+        {x: 6 * grid, y: 10 * grid},
+        {x: 5 * grid, y: 10 * grid}
+      ];
+      dx = grid;
+      dy = 0;
+      moveQueue = []; // 防止连续按键反向自杀
+      food = randomPosition();
+      score = 0;
+      playing = false;
+      paused = false;
+      gameOver = false;
+      speed = 150; // ms移动一次
+      scoreDom.textContent = "得分：" + score;
+      infoDom.textContent = "按任意键开始游戏";
+      clearTimeout(timer);
+      draw();
+    }
+
+    function randomPosition() {
+      let pos;
+      while (true) {
+        pos = {
+          x: Math.floor(Math.random() * gridCount) * grid,
+          y: Math.floor(Math.random() * gridCount) * grid
+        };
+        // 食物不能出生在蛇身上
+        if (!snake.some(s => s.x === pos.x && s.y === pos.y)) break;
+      }
+      return pos;
+    }
+
+    function gameLoop() {
+      if (!playing || paused || gameOver) return;
+      move();
+      draw();
+      timer = setTimeout(gameLoop, speed);
+    }
+
+    function move() {
+      // 防止连续快速反向自杀
+      if (moveQueue.length) {
+        let dir = moveQueue.shift();
+        if ((dir.dx !== -dx || dir.dy !== -dy) && (dir.dx !== dx || dir.dy !== dy)) {
+          dx = dir.dx;
+          dy = dir.dy;
+        }
+      }
+      let head = {x: (snake[0].x + dx + canvas.width) % canvas.width,
+                  y: (snake[0].y + dy + canvas.height) % canvas.height};
+      // 撞自己判定
+      if (snake.some(s => s.x === head.x && s.y === head.y)) {
+        gameOver = true;
+        infoDom.textContent = "游戏结束！得分：" + score + "，3秒后自动重开";
+        setTimeout(init, 3000);
+        return;
+      }
+      snake.unshift(head);
+      // 吃到食物
+      if (head.x === food.x && head.y === food.y) {
+        score++;
+        scoreDom.textContent = "得分：" + score;
+        food = randomPosition();
+      } else {
+        snake.pop();
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 画食物
+      ctx.fillStyle = '#e33';
+      ctx.fillRect(food.x, food.y, grid-2, grid-2);
+
+      // 画蛇
+      snake.forEach((part, i) => {
+        ctx.fillStyle = i === 0 ? '#27f' : '#3c6';
+        ctx.fillRect(part.x, part.y, grid-2, grid-2);
+      });
+
+      // 游戏结束覆盖
+      if (gameOver) {
+        ctx.fillStyle = "rgba(255,255,255,0.8)";
+        ctx.fillRect(0, canvas.height/2-40, canvas.width, 80);
+        ctx.fillStyle = "#e33";
+        ctx.font = "bold 32px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("游戏结束!", canvas.width/2, canvas.height/2-10);
+        ctx.font = "20px Arial";
+        ctx.fillStyle = "#333";
+        ctx.fillText("得分：" + score + "，3秒后自动重开", canvas.width/2, canvas.height/2+25);
+      }
+      // 暂停遮罩
+      if (paused && playing && !gameOver) {
+        ctx.fillStyle = "rgba(0,0,0,0.35)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 32px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("暂停", canvas.width/2, canvas.height/2);
+      }
+    }
+
+    document.addEventListener('keydown', function(e) {
+      if (!playing && !gameOver) {
+        playing = true;
+        infoDom.textContent = "方向键控制蛇移动，空格暂停/继续";
+        gameLoop();
+        return;
+      }
+      if (gameOver) return;
+
+      // 暂停/继续
+      if (e.code === 'Space') {
+        paused = !paused;
+        infoDom.textContent = paused ? "已暂停，按空格继续" : "方向键控制蛇移动，空格暂停/继续";
+        if (!paused) gameLoop();
+        draw();
+        return;
+      }
+
+      // 控制方向，防止向直接反方向移动
+      let dir = null;
+      if (e.key === 'ArrowLeft') dir = {dx: -grid, dy: 0};
+      else if (e.key === 'ArrowUp') dir = {dx: 0, dy: -grid};
+      else if (e.key === 'ArrowRight') dir = {dx: grid, dy: 0};
+      else if (e.key === 'ArrowDown') dir = {dx: 0, dy: grid};
+      if (dir) {
+        moveQueue.push(dir);
+      }
+    });
+
+    // 首次初始化
+    init();
+  </script>
+</body>
+</html>
